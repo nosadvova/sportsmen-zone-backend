@@ -106,11 +106,11 @@ func Register() gin.HandlerFunc {
 		user.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		user.ID = primitive.NewObjectID()
 		user.User_id = user.ID.Hex()
-		token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, user.User_id)
-		user.Token = &token
-		user.Refresh_Token = &refreshToken
+		// token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, user.User_id)
+		// user.Token = &token
+		// user.Refresh_Token = &refreshToken
 
-		resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
+		_, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
 			msg := fmt.Sprintf("error while inserting user: %s", insertErr.Error())
 			log.Print(err.Error())
@@ -119,7 +119,7 @@ func Register() gin.HandlerFunc {
 		}
 		defer cancel()
 
-		c.JSON(http.StatusOK, resultInsertionNumber)
+		c.Status(http.StatusOK)
 	}
 }
 
