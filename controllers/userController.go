@@ -16,39 +16,17 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var userCollection *mongo.Collection = database.OpenCollection(database.Client, "users")
 var validate = validator.New()
-
-func HashPassword(password string) string {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return string(bytes)
-}
-
-func VerifyPassword(password string, hash string) (bool, string) {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	check := true
-	msg := ""
-
-	if err != nil {
-		msg = fmt.Sprintln("email or password is incorrect")
-		check = false
-	}
-
-	return check, msg
-}
 
 func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		var user models.User
 		var foundUser models.User
+		var authToken models.AuthToken
 
 		if err := c.BindJSON(&user); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -62,7 +40,7 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		passwordIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+		passwordIsValid, msg := helper.VerifyPassword(*user.Password, *foundUser.Password)
 		defer cancel()
 
 		if !passwordIsValid {
@@ -81,7 +59,13 @@ func Login() gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, foundUser)
+
+		authToken.Token = token
+		authToken.Refresh_Token = refreshToken
+		authToken.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		authToken.Expires_At = authToken.Created_At.Add(time.Hour * 24)
+
+		c.JSON(http.StatusOK, authToken)
 	}
 }
 
@@ -92,12 +76,14 @@ func Register() gin.HandlerFunc {
 
 		if err := c.BindJSON(&user); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			log.Print(err.Error())
 			defer cancel()
 		}
 
 		validationErr := validate.Struct(user)
 		if validationErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			log.Print(validationErr.Error())
 			defer cancel()
 		}
 
@@ -105,14 +91,15 @@ func Register() gin.HandlerFunc {
 		defer cancel()
 		if err != nil {
 			log.Panic(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "erro occured while checking user email"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking user email"})
 		}
 
-		password := HashPassword(*user.Password)
+		password := helper.HashPassword(*user.Password)
 		user.Password = &password
 
 		if count > 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "user already exists"})
+			log.Print(err.Error())
 			return
 		}
 
@@ -126,6 +113,7 @@ func Register() gin.HandlerFunc {
 		resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
 			msg := fmt.Sprintf("error while inserting user: %s", insertErr.Error())
+			log.Print(err.Error())
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}
@@ -172,8 +160,7 @@ func GetUsers() gin.HandlerFunc {
 			page = 1
 		}
 
-		startIndex := (page - 1) * recordPerPage
-		startIndex, _ = strconv.Atoi(c.Query("startIndex"))
+		startIndex, _ := strconv.Atoi(c.Query("startIndex"))
 
 		matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
 		groupStage := bson.D{
