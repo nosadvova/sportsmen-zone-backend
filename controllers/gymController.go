@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,61 +17,165 @@ import (
 
 var gymCollection *mongo.Collection = database.OpenCollection(database.Client, "gyms")
 
-func CreateGym(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func CreateGym() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	var gym models.Gym
-	if err := c.BindJSON(&gym); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		var gym models.Gym
+		if err := c.BindJSON(&gym); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		trainerID, _ := primitive.ObjectIDFromHex(c.GetString("user_id"))
+		gym.Trainer_ID = trainerID
+		gym.ID = primitive.NewObjectID()
+		gym.Gym_Id = gym.ID.Hex()
+		gym.Created_At = time.Now()
+
+		// Insert the gym into the database
+		result, err := gymCollection.InsertOne(ctx, gym)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create gym"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{"id": result.InsertedID})
 	}
-
-	trainerID, _ := primitive.ObjectIDFromHex(c.GetString("userID")) // Placeholder for actual user ID extraction
-	gym.Trainer_ID = trainerID
-	gym.Created_At = time.Now()
-
-	// Insert the gym into the database
-	result, err := gymCollection.InsertOne(ctx, gym)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create gym"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"id": result.InsertedID})
 }
 
-func GetSportsmenForGym(c *gin.Context, gymID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// func GetGym() gin.HandlerFunc {
+// 	return func(c *gin.Context) {
+// 		gymId := c.Param("gym_id")
 
-	gymObjectID, err := primitive.ObjectIDFromHex(gymID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid gym ID"})
-		return
+// 		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+
+// 		var gym models.Gym
+// 		err := userCollection.FindOne(ctx, bson.M{"gym_id": gymId}).Decode(&gym)
+// 		defer cancel()
+
+// 		if err != nil {
+// 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+// 			return
+// 		}
+// 		c.JSON(http.StatusOK, gym)
+// 	}
+// }
+
+func GetGym() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		gymId := c.Param("gym_id")
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var gym models.Gym
+		err := gymCollection.FindOne(ctx, bson.M{"gym_id": gymId}).Decode(&gym)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gym not found"})
+			return
+		}
+		c.JSON(http.StatusOK, gym)
 	}
+}
 
-	matchStage := bson.D{{Key: "$match", Value: bson.M{"_id": gymObjectID}}}
-	lookupStage := bson.D{{Key: "$lookup", Value: bson.M{
-		"from":         "sportsmen",
-		"localField":   "sportsmen",
-		"foreignField": "_id",
-		"as":           "sportsmenDetails",
-	}}}
+func GetGyms() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	cursor, err := gymCollection.Aggregate(ctx, mongo.Pipeline{matchStage, lookupStage})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve sportsmen"})
-		log.Print("Failed to retrieve sportsmen")
-		return
+		// Pagination parameters
+		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
+		if err != nil || recordPerPage <= 0 {
+			recordPerPage = 10
+		}
+
+		page, err := strconv.Atoi(c.Query("page"))
+		if err != nil || page <= 0 {
+			page = 1
+		}
+
+		startIndex, _ := strconv.Atoi(c.Query("startIndex"))
+		if startIndex < 0 {
+			startIndex = (page - 1) * recordPerPage
+		}
+
+		// MongoDB aggregation pipeline to fetch gyms
+		matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
+		groupStage := bson.D{
+			{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: bson.D{
+					{Key: "_id", Value: "null"},
+				}},
+				{Key: "total_count", Value: bson.D{
+					{Key: "$sum", Value: 1},
+				}},
+				{Key: "data", Value: bson.D{
+					{Key: "$push", Value: "$$ROOT"}}}}}}
+
+		projectStage := bson.D{
+			{Key: "$project", Value: bson.D{
+				{Key: "_id", Value: 0},
+				{Key: "total_count", Value: 1},
+				{Key: "gyms", Value: bson.D{{Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}}}}}}}
+
+		result, err := gymCollection.Aggregate(ctx, mongo.Pipeline{
+			matchStage, groupStage, projectStage})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while getting gyms"})
+			return
+		}
+
+		var gymsResult []bson.M
+		if err = result.All(ctx, &gymsResult); err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		if len(gymsResult) > 0 {
+			c.JSON(http.StatusOK, gymsResult[0])
+		} else {
+			c.JSON(http.StatusOK, gin.H{"data": []interface{}{}})
+		}
 	}
+}
 
-	var gymsWithSportsmen []bson.M
-	if err = cursor.All(ctx, &gymsWithSportsmen); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode sportsmen data"})
-		log.Print("Failed to decode sportsmen data")
-		return
+func GetSportsmenForGym() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		gymID := c.Param("gym_id")
+
+		gymObjectID, err := primitive.ObjectIDFromHex(gymID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid gym ID"})
+			return
+		}
+
+		matchStage := bson.D{{Key: "$match", Value: bson.M{"_id": gymObjectID}}}
+		lookupStage := bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "sportsmen",
+			"localField":   "sportsmen",
+			"foreignField": "_id",
+			"as":           "sportsmenDetails",
+		}}}
+
+		cursor, err := gymCollection.Aggregate(ctx, mongo.Pipeline{matchStage, lookupStage})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve sportsmen"})
+			log.Print("Failed to retrieve sportsmen")
+			return
+		}
+
+		var gymsWithSportsmen []bson.M
+		if err = cursor.All(ctx, &gymsWithSportsmen); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode sportsmen data"})
+			log.Print("Failed to decode sportsmen data")
+			return
+		}
+
+		c.JSON(http.StatusOK, gymsWithSportsmen)
 	}
-
-	c.JSON(http.StatusOK, gymsWithSportsmen)
 }

@@ -63,7 +63,7 @@ func Login() gin.HandlerFunc {
 		authToken.Token = token
 		authToken.Refresh_Token = refreshToken
 		authToken.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		authToken.Expires_At = authToken.Created_At.Add(time.Hour * 24)
+		authToken.Expires_At = authToken.Created_At.Add(time.Hour * 96)
 
 		c.JSON(http.StatusOK, authToken)
 	}
@@ -127,19 +127,13 @@ func GetUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userId := c.Param("user_id")
 
-		if err := helper.MatchUserTypeToId(c, userId); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
 		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
-		defer cancel()
-
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 			return
 		}
 		c.JSON(http.StatusOK, user)

@@ -6,17 +6,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// type Gym struct {
-// 	ID          primitive.ObjectID `bson:"id"`
-// 	Name        *string            `json:"name" validation:"required,min=2,max=20"`
-// 	Description *string            `json:"description" validation:"required,min=2,max=200"`
-// 	Created_At  time.Time          `json:"created_at"`
-// 	Trainer     *User              `json:"trainer"`
-// 	Sportsmen   []User             `json:"sportsmen"`
-// }
-
 type Gym struct {
-	ID          primitive.ObjectID   `bson:"id"`
+	ID          primitive.ObjectID   `bson:"_id"`
 	Name        string               `json:"name" validation:"required"`
 	Description string               `json:"description"`
 	Location    Location             `json:"location"`
@@ -24,6 +15,7 @@ type Gym struct {
 	Sportsmen   []primitive.ObjectID `json:"sportsmen"`
 	Trainings   []primitive.ObjectID `json:"trainings"`
 	Created_At  time.Time            `json:"created_at"`
+	Gym_Id      string               `json:"gym_id"`
 }
 
 type Location struct {
