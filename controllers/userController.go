@@ -33,14 +33,14 @@ func Login() gin.HandlerFunc {
 			defer cancel()
 		}
 
-		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
+		err := userCollection.FindOne(ctx, bson.M{"personal_information.email": user.Personal_Information.Email}).Decode(&foundUser)
 		defer cancel()
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 			return
 		}
 
-		passwordIsValid, msg := helper.VerifyPassword(*user.Password, *foundUser.Password)
+		passwordIsValid, msg := helper.VerifyPassword(*user.Personal_Information.Password, *foundUser.Personal_Information.Password)
 		defer cancel()
 
 		if !passwordIsValid {
@@ -48,12 +48,13 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
-		if foundUser.Email == nil {
+		if foundUser.Personal_Information.Email == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 		}
-		token, refreshToken, _ := helper.GenerateAllTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_Type, foundUser.User_id)
-		helper.UpdateAllTokens(token, refreshToken, foundUser.User_id)
-		err = userCollection.FindOne(ctx, bson.M{"user_id": foundUser.User_id}).Decode(&foundUser)
+		token, refreshToken, _ := helper.GenerateAllTokens(*foundUser.Personal_Information.Email, *foundUser.Personal_Information.First_Name,
+			*foundUser.Personal_Information.Last_Name, *foundUser.Personal_Information.User_Type, foundUser.Personal_Information.User_id)
+		helper.UpdateAllTokens(token, refreshToken, foundUser.Personal_Information.User_id)
+		err = userCollection.FindOne(ctx, bson.M{"personal_information.user_id": foundUser.Personal_Information.User_id}).Decode(&foundUser)
 
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -87,15 +88,15 @@ func Register() gin.HandlerFunc {
 			defer cancel()
 		}
 
-		count, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
+		count, err := userCollection.CountDocuments(ctx, bson.M{"personal_information.email": user.Personal_Information.Email})
 		defer cancel()
 		if err != nil {
 			log.Panic(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking user email"})
 		}
 
-		password := helper.HashPassword(*user.Password)
-		user.Password = &password
+		password := helper.HashPassword(*user.Personal_Information.Password)
+		user.Personal_Information.Password = &password
 
 		if count > 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "user already exists"})
@@ -103,12 +104,9 @@ func Register() gin.HandlerFunc {
 			return
 		}
 
-		user.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		user.Personal_Information.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		user.ID = primitive.NewObjectID()
-		user.User_id = user.ID.Hex()
-		// token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, user.User_id)
-		// user.Token = &token
-		// user.Refresh_Token = &refreshToken
+		user.Personal_Information.User_id = user.ID.Hex()
 
 		_, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
@@ -119,7 +117,8 @@ func Register() gin.HandlerFunc {
 		}
 		defer cancel()
 
-		c.Status(http.StatusOK)
+		c.JSON(http.StatusOK, user)
+		// c.Status(http.StatusOK)
 	}
 }
 
@@ -131,7 +130,7 @@ func GetUser() gin.HandlerFunc {
 		defer cancel()
 
 		var user models.User
-		err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
+		err := userCollection.FindOne(ctx, bson.M{"personal_information.user_id": userId}).Decode(&user)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 			return
@@ -189,5 +188,75 @@ func GetUsers() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, allUsers[0])
+	}
+}
+
+func GetCurrentUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userId, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var user models.User
+		err := userCollection.FindOne(ctx, bson.M{"personal_information.user_id": userId}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, user)
+	}
+}
+
+func RefreshToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var requestToken models.AuthToken
+		if err := c.BindJSON(&requestToken); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			log.Print(err.Error())
+			return
+		}
+
+		// Find user by refresh token, you might need an index on this field for efficiency
+		var user models.User
+		err := userCollection.FindOne(ctx, bson.M{"refresh_token": user.Personal_Information.Refresh_Token}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
+			return
+		}
+
+		if time.Now().After(requestToken.Expires_At) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token expired"})
+			return
+		}
+
+		// Generate new tokens
+		newToken, newRefreshToken, _ := helper.GenerateAllTokens(*user.Personal_Information.Email, *user.Personal_Information.First_Name,
+			*user.Personal_Information.Last_Name, *user.Personal_Information.User_Type, user.Personal_Information.User_id)
+		helper.UpdateAllTokens(newToken, newRefreshToken, user.Personal_Information.User_id)
+
+		update := bson.M{
+			"$set": bson.M{
+				"token":         newToken,
+				"refresh_token": newRefreshToken,
+				"token_expires": time.Now().Add(24 * time.Hour * 7), // Set token expiration, adjust as necessary
+			},
+		}
+		_, err = userCollection.UpdateOne(ctx, bson.M{"user_id": user.Personal_Information.User_id}, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user tokens"})
+			return
+		}
+
+		// Return the new tokens
+		c.JSON(http.StatusOK, gin.H{"token": newToken, "refresh_token": newRefreshToken})
 	}
 }

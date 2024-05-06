@@ -11,4 +11,5 @@ func UserRoutes(router *gin.Engine) {
 
 	router.GET("/users", controller.GetUsers())
 	router.GET("/users/:user_id", controller.GetUser())
+	router.GET("/users/me", controller.GetCurrentUser())
 }
