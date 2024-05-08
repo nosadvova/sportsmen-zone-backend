@@ -23,6 +23,7 @@ func CreateGym() gin.HandlerFunc {
 		defer cancel()
 
 		var gym models.Gym
+
 		if err := c.BindJSON(&gym); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -34,10 +35,28 @@ func CreateGym() gin.HandlerFunc {
 		gym.Gym_Id = gym.ID.Hex()
 		gym.Created_At = time.Now()
 
+		var user models.User
+		err := userCollection.FindOne(ctx, bson.M{"_id": trainerID}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user information"})
+			return
+		}
+		if user.Personal_Information.Gym != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Gym already exists for this trainer"})
+			return
+		}
+
 		// Insert the gym into the database
 		result, err := gymCollection.InsertOne(ctx, gym)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create gym"})
+			return
+		}
+
+		update := bson.M{"$set": bson.M{"personal_information.gym": gym.Gym_Id}}
+		_, err = userCollection.UpdateOne(ctx, bson.M{"_id": trainerID}, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's gym information"})
 			return
 		}
 
