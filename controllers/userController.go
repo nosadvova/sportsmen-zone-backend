@@ -64,7 +64,7 @@ func Login() gin.HandlerFunc {
 		authToken.Token = token
 		authToken.Refresh_Token = refreshToken
 		authToken.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		authToken.Expires_At = authToken.Created_At.Add(time.Hour * 96)
+		authToken.Expires_At = authToken.Created_At.Add(time.Hour * 120)
 
 		c.JSON(http.StatusOK, authToken)
 	}
