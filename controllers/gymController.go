@@ -64,24 +64,6 @@ func CreateGym() gin.HandlerFunc {
 	}
 }
 
-// func GetGym() gin.HandlerFunc {
-// 	return func(c *gin.Context) {
-// 		gymId := c.Param("gym_id")
-
-// 		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-
-// 		var gym models.Gym
-// 		err := userCollection.FindOne(ctx, bson.M{"gym_id": gymId}).Decode(&gym)
-// 		defer cancel()
-
-// 		if err != nil {
-// 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 			return
-// 		}
-// 		c.JSON(http.StatusOK, gym)
-// 	}
-// }
-
 func GetGym() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gymId := c.Param("gym_id")
