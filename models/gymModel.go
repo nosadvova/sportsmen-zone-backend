@@ -8,6 +8,7 @@ import (
 
 type Gym struct {
 	ID          primitive.ObjectID   `bson:"_id"`
+	Image       string               `json:"image"`
 	Name        string               `json:"name" validation:"required"`
 	Description string               `json:"description"`
 	Location    Location             `json:"location"`
