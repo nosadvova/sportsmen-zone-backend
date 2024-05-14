@@ -86,7 +86,6 @@ func GetGyms() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Pagination parameters
 		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
 		if err != nil || recordPerPage <= 0 {
 			recordPerPage = 10
@@ -102,7 +101,6 @@ func GetGyms() gin.HandlerFunc {
 			startIndex = (page - 1) * recordPerPage
 		}
 
-		// MongoDB aggregation pipeline to fetch gyms
 		matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
 		groupStage := bson.D{
 			{Key: "$group", Value: bson.D{
