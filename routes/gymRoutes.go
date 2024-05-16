@@ -10,4 +10,5 @@ func GymRoutes(router *gin.Engine) {
 	router.GET("/gym", controller.GetGyms())
 	router.GET("/gym/:gym_id", controller.GetGym())
 	router.GET("/gym/sportsmen", controller.GetSportsmenForGym())
+	router.POST("/gym/:gym_id/follow", controller.FollowGym())
 }

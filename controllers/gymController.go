@@ -35,6 +35,9 @@ func CreateGym() gin.HandlerFunc {
 		gym.Gym_Id = gym.ID.Hex()
 		gym.Created_At = time.Now()
 
+		gym.Sportsmen = []string{}
+		gym.Trainings = []string{}
+
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": trainerID}).Decode(&user)
 		if err != nil {
@@ -137,6 +140,63 @@ func GetGyms() gin.HandlerFunc {
 		} else {
 			c.JSON(http.StatusOK, gin.H{"data": []interface{}{}})
 		}
+	}
+}
+
+func FollowGym() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		gymID := c.Param("gym_id")
+		userID := c.GetString("user_id")
+
+		gymObjectID, err := primitive.ObjectIDFromHex(gymID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid gym ID"})
+			return
+		}
+
+		// Find the gym
+		var gym models.Gym
+		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID}).Decode(&gym)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Gym not found"})
+			return
+		}
+
+		if gym.Sportsmen == nil {
+			gym.Sportsmen = []string{}
+		}
+
+		// Check if the user is already following the gym
+		for _, id := range gym.Sportsmen {
+			if id == userID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Already following this gym"})
+				return
+			}
+		}
+
+		// Add the user's ID to the gym's sportsmen array
+		updateGym := bson.M{"$push": bson.M{"sportsmen": userID}}
+		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, updateGym)
+		if err != nil {
+			log.Println(err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to follow gym"})
+			return
+		}
+
+		// Update the user's gym field
+		updateUser := bson.M{"$set": bson.M{"personal_information.gym": gymID}}
+		_, err = userCollection.UpdateOne(ctx, bson.M{"_id": userID}, updateUser)
+		if err != nil {
+			// Rollback the previous operation if this fails
+			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's gym information"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Successfully followed the gym"})
 	}
 }
 
