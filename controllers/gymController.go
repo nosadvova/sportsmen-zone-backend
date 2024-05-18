@@ -189,6 +189,7 @@ func FollowGym() gin.HandlerFunc {
 		// Update the user's gym field
 		updateUser := bson.M{"$set": bson.M{"personal_information.gym": gymID}}
 		_, err = userCollection.UpdateOne(ctx, bson.M{"_id": userID}, updateUser)
+		log.Print(err)
 		if err != nil {
 			// Rollback the previous operation if this fails
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
