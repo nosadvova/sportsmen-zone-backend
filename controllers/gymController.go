@@ -36,7 +36,7 @@ func CreateGym() gin.HandlerFunc {
 		gym.Created_At = time.Now()
 
 		gym.Sportsmen = []string{}
-		gym.Trainings = []string{}
+		gym.Trainings = []primitive.ObjectID{}
 
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": trainerID}).Decode(&user)
@@ -163,7 +163,6 @@ func FollowGym() gin.HandlerFunc {
 			return
 		}
 
-		// Find the gym
 		var gym models.Gym
 		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID}).Decode(&gym)
 		if err != nil {
@@ -175,7 +174,6 @@ func FollowGym() gin.HandlerFunc {
 			gym.Sportsmen = []string{}
 		}
 
-		// Check if the user is already following the gym
 		for _, id := range gym.Sportsmen {
 			if id == userID {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Already following this gym"})
@@ -183,7 +181,6 @@ func FollowGym() gin.HandlerFunc {
 			}
 		}
 
-		// Add the user's ID to the gym's sportsmen array
 		updateGym := bson.M{"$push": bson.M{"sportsmen": userID}}
 		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, updateGym)
 		if err != nil {
@@ -192,22 +189,18 @@ func FollowGym() gin.HandlerFunc {
 			return
 		}
 
-		// Find the user to ensure the user document exists
 		var user models.User
 		err = userCollection.FindOne(ctx, bson.M{"_id": userObjectID}).Decode(&user)
 		if err != nil {
-			// Rollback the gym update if the user is not found
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 			return
 		}
 
-		// Update the user's gym field
 		updateUser := bson.M{"$set": bson.M{"personal_information.gym": gymID}}
 		result, err := userCollection.UpdateOne(ctx, bson.M{"_id": userObjectID}, updateUser)
 		if err != nil {
 			log.Println("User update error:", err.Error())
-			// Rollback the previous operation if this fails
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's gym information"})
 			return
@@ -215,7 +208,6 @@ func FollowGym() gin.HandlerFunc {
 
 		if result.MatchedCount == 0 {
 			log.Println("User not found for update")
-			// Rollback the previous operation if no user document was updated
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found for update"})
 			return
