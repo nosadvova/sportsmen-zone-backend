@@ -141,3 +141,57 @@ func FetchNotifications() gin.HandlerFunc {
 		c.JSON(http.StatusOK, notifications)
 	}
 }
+
+func DeleteNotification() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		notificationID := c.Param("notification_id")
+		trainerID := c.GetString("user_id")
+		if trainerID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		notificationObjectID, err := primitive.ObjectIDFromHex(notificationID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Notification ID"})
+			return
+		}
+
+		trainerObjectID, err := primitive.ObjectIDFromHex(trainerID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Trainer ID"})
+			return
+		}
+
+		var notification models.Notification
+		err = notificationCollection.FindOne(ctx, bson.M{"_id": notificationObjectID, "trainer_id": trainerObjectID}).Decode(&notification)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Trainer did not create this notification"})
+			return
+		}
+
+		_, err = notificationCollection.DeleteOne(ctx, bson.M{"_id": notificationObjectID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notification"})
+			return
+		}
+
+		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": notification.GymID}, bson.M{"$pull": bson.M{"notifications": notificationObjectID}})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove notification from gym"})
+			return
+		}
+
+		// Optionally: Remove the notification ID from the user documents
+		_, err = userCollection.UpdateMany(ctx, bson.M{}, bson.M{"$pull": bson.M{"notifications": notificationObjectID}})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove notification from users"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Notification deleted successfully"})
+	}
+}

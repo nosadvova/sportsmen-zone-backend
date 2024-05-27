@@ -8,4 +8,5 @@ import (
 func NotificationRoutes(router *gin.Engine) {
 	router.GET("/notifications", controller.FetchNotifications())
 	router.POST("/notifications", controller.CreateNotification())
+	router.DELETE("/notifications/:notification_id", controller.DeleteNotification())
 }
