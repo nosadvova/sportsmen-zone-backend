@@ -39,7 +39,7 @@ func CreateNotification() gin.HandlerFunc {
 			return
 		}
 
-		gymObjectID, err := primitive.ObjectIDFromHex(notification.GymID)
+		gymObjectID, err := primitive.ObjectIDFromHex(notification.Gym_ID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Gym ID"})
 			return
@@ -53,7 +53,8 @@ func CreateNotification() gin.HandlerFunc {
 		}
 
 		notification.ID = primitive.NewObjectID()
-		notification.CreatedAt = time.Now()
+		notification.Created_At = time.Now()
+		notification.Trainer_ID = trainerObjectID
 
 		_, err = notificationCollection.InsertOne(ctx, notification)
 		if err != nil {
@@ -68,7 +69,7 @@ func CreateNotification() gin.HandlerFunc {
 		}
 
 		// Get the users following the gym and add notification ID to each user
-		cursor, err := userCollection.Find(ctx, bson.M{"personal_information.gym": notification.GymID})
+		cursor, err := userCollection.Find(ctx, bson.M{"personal_information.gym": notification.Gym_ID})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
 			return
@@ -97,7 +98,6 @@ func FetchNotifications() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// userID := c.GetString("user_id")
 		userID, _ := primitive.ObjectIDFromHex(c.GetString("user_id"))
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
@@ -166,6 +166,9 @@ func DeleteNotification() gin.HandlerFunc {
 			return
 		}
 
+		log.Printf("Deleting Notification ID: %s by Trainer ID: %s", notificationObjectID.Hex(), trainerObjectID.Hex())
+
+		// Verify that the trainer created the notification
 		var notification models.Notification
 		err = notificationCollection.FindOne(ctx, bson.M{"_id": notificationObjectID, "trainer_id": trainerObjectID}).Decode(&notification)
 		if err != nil {
@@ -173,13 +176,15 @@ func DeleteNotification() gin.HandlerFunc {
 			return
 		}
 
+		// Remove the notification from the notifications collection
 		_, err = notificationCollection.DeleteOne(ctx, bson.M{"_id": notificationObjectID})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notification"})
 			return
 		}
 
-		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": notification.GymID}, bson.M{"$pull": bson.M{"notifications": notificationObjectID}})
+		// Remove the notification ID from the corresponding gym document
+		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": notification.Gym_ID}, bson.M{"$pull": bson.M{"notifications": notificationObjectID}})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove notification from gym"})
 			return
