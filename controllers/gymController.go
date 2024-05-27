@@ -69,13 +69,13 @@ func CreateGym() gin.HandlerFunc {
 
 func GetGym() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		gymId := c.Param("gym_id")
-
 		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		gymId := c.Param("gym_id")
+
 		var gym models.Gym
-		err := gymCollection.FindOne(ctx, bson.M{"gym_id": gymId}).Decode(&gym)
+		err := gymCollection.FindOne(ctx, bson.M{"_id": gymId}).Decode(&gym)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gym not found"})
 			return
@@ -222,11 +222,10 @@ func GetSportsmenForGym() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		gymID := c.Param("gym_id")
-
-		gymObjectID, err := primitive.ObjectIDFromHex(gymID)
+		gymObjectID, err := primitive.ObjectIDFromHex(c.Param("gym_id"))
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid gym ID"})
+			log.Print(gymObjectID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Gym ID"})
 			return
 		}
 

@@ -28,17 +28,27 @@ func CreateNotification() gin.HandlerFunc {
 		}
 
 		trainerID := c.GetString("user_id")
-		gymObjectID, err := primitive.ObjectIDFromHex(notification.GymID.Hex())
+		if trainerID == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		trainerObjectID, err := primitive.ObjectIDFromHex(trainerID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Trainer ID"})
+			return
+		}
+
+		gymObjectID, err := primitive.ObjectIDFromHex(notification.GymID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Gym ID"})
 			return
 		}
 
 		var gym models.Gym
-		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID, "trainer_id": trainerID}).Decode(&gym)
+		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID, "trainer_id": trainerObjectID}).Decode(&gym)
 		if err != nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Trainer does not own this gym"})
-			log.Print(gymObjectID, trainerID)
 			return
 		}
 
@@ -51,6 +61,33 @@ func CreateNotification() gin.HandlerFunc {
 			return
 		}
 
+		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$push": bson.M{"notifications": notification.ID}})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update gym with notification"})
+			return
+		}
+
+		// Get the users following the gym and add notification ID to each user
+		cursor, err := userCollection.Find(ctx, bson.M{"personal_information.gym": notification.GymID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var users []models.User
+		if err = cursor.All(ctx, &users); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode users"})
+			return
+		}
+
+		for _, user := range users {
+			_, err = userCollection.UpdateOne(ctx, bson.M{"_id": user.ID}, bson.M{"$push": bson.M{"notifications": notification.ID}})
+			if err != nil {
+				log.Printf("Failed to update user %s with notification: %v", user.ID.Hex(), err)
+			}
+		}
+
 		c.JSON(http.StatusCreated, notification)
 	}
 }
@@ -60,7 +97,8 @@ func FetchNotifications() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		userID := c.GetString("user_id")
+		// userID := c.GetString("user_id")
+		userID, _ := primitive.ObjectIDFromHex(c.GetString("user_id"))
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
@@ -69,7 +107,7 @@ func FetchNotifications() gin.HandlerFunc {
 		}
 
 		if user.Personal_Information.Gym == nil {
-			c.JSON(http.StatusNoContent, gin.H{"error": "Gym not found"})
+			c.JSON(http.StatusOK, gin.H{"notifications": []models.Notification{}})
 			return
 		}
 
@@ -79,11 +117,20 @@ func FetchNotifications() gin.HandlerFunc {
 			return
 		}
 
-		cursor, err := notificationCollection.Find(ctx, bson.M{"gym_id": gymID})
+		var gym models.Gym
+		err = gymCollection.FindOne(ctx, bson.M{"_id": gymID}).Decode(&gym)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gym not found"})
+			return
+		}
+
+		// Fetch notifications using the notification IDs from the gym
+		cursor, err := notificationCollection.Find(ctx, bson.M{"_id": bson.M{"$in": gym.Notifications}})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch notifications"})
 			return
 		}
+		defer cursor.Close(ctx)
 
 		var notifications []models.Notification
 		if err = cursor.All(ctx, &notifications); err != nil {
