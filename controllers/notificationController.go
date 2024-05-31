@@ -39,11 +39,9 @@ func CreateNotification() gin.HandlerFunc {
 			return
 		}
 
-		gymObjectID, err := primitive.ObjectIDFromHex(notification.Gym_ID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Gym ID"})
-			return
-		}
+		log.Print(notification.Gym_ID)
+
+		gymObjectID := notification.Gym_ID
 
 		var gym models.Gym
 		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID, "trainer_id": trainerObjectID}).Decode(&gym)
@@ -68,7 +66,6 @@ func CreateNotification() gin.HandlerFunc {
 			return
 		}
 
-		// Get the users following the gym and add notification ID to each user
 		cursor, err := userCollection.Find(ctx, bson.M{"personal_information.gym": notification.Gym_ID})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
@@ -99,6 +96,8 @@ func FetchNotifications() gin.HandlerFunc {
 		defer cancel()
 
 		userID, _ := primitive.ObjectIDFromHex(c.GetString("user_id"))
+
+		// Find the user
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
@@ -106,11 +105,13 @@ func FetchNotifications() gin.HandlerFunc {
 			return
 		}
 
+		// Check if the user is associated with a gym
 		if user.Personal_Information.Gym == nil {
 			c.JSON(http.StatusOK, gin.H{"notifications": []models.Notification{}})
 			return
 		}
 
+		// Convert Gym ID to ObjectID
 		gymID, err := primitive.ObjectIDFromHex(*user.Personal_Information.Gym)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Gym ID"})

@@ -73,9 +73,14 @@ func GetGym() gin.HandlerFunc {
 		defer cancel()
 
 		gymId := c.Param("gym_id")
+		gymObjectID, err := primitive.ObjectIDFromHex(gymId)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Gym ID"})
+			return
+		}
 
 		var gym models.Gym
-		err := gymCollection.FindOne(ctx, bson.M{"_id": gymId}).Decode(&gym)
+		err = gymCollection.FindOne(ctx, bson.M{"_id": gymObjectID}).Decode(&gym)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gym not found"})
 			return

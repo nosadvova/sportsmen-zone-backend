@@ -8,7 +8,7 @@ import (
 
 type Notification struct {
 	ID         primitive.ObjectID `bson:"_id"`
-	Gym_ID     string             `json:"gym_id"`
+	Gym_ID     primitive.ObjectID `json:"gym_id"`
 	Trainer_ID primitive.ObjectID `json:"trainer_id"`
 	Type       string             `json:"type"`
 	Title      string             `json:"title"`
