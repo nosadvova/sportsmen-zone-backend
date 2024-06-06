@@ -114,6 +114,7 @@ func FetchNotifications() gin.HandlerFunc {
 		// Convert Gym ID to ObjectID
 		gymID, err := primitive.ObjectIDFromHex(*user.Personal_Information.Gym)
 		if err != nil {
+			log.Print("Failed to convert gym ID to ObjectID")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Gym ID"})
 			return
 		}
@@ -121,6 +122,7 @@ func FetchNotifications() gin.HandlerFunc {
 		var gym models.Gym
 		err = gymCollection.FindOne(ctx, bson.M{"_id": gymID}).Decode(&gym)
 		if err != nil {
+			log.Print("Not found gym")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gym not found"})
 			return
 		}
@@ -128,6 +130,7 @@ func FetchNotifications() gin.HandlerFunc {
 		// Fetch notifications using the notification IDs from the gym
 		cursor, err := notificationCollection.Find(ctx, bson.M{"_id": bson.M{"$in": gym.Notifications}})
 		if err != nil {
+			log.Print("Failed to fetch notifications")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch notifications"})
 			return
 		}
@@ -135,6 +138,7 @@ func FetchNotifications() gin.HandlerFunc {
 
 		var notifications []models.Notification
 		if err = cursor.All(ctx, &notifications); err != nil {
+			log.Print("Failed to decode notifications")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode notifications"})
 			return
 		}

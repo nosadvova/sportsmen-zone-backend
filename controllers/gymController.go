@@ -35,7 +35,7 @@ func CreateGym() gin.HandlerFunc {
 		gym.Gym_Id = gym.ID.Hex()
 		gym.Created_At = time.Now()
 
-		gym.Sportsmen = []string{}
+		gym.Sportsmen = []primitive.ObjectID{}
 		gym.Trainings = []primitive.ObjectID{}
 
 		var user models.User
@@ -175,44 +175,48 @@ func FollowGym() gin.HandlerFunc {
 			return
 		}
 
-		if gym.Sportsmen == nil {
-			gym.Sportsmen = []string{}
-		}
-
-		for _, id := range gym.Sportsmen {
-			if id == userID {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Already following this gym"})
-				return
-			}
-		}
-
-		updateGym := bson.M{"$push": bson.M{"sportsmen": userID}}
-		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, updateGym)
-		if err != nil {
-			log.Println(err.Error())
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to follow gym"})
-			return
-		}
-
-		var user models.User
+		var user models.PersonalInformation
 		err = userCollection.FindOne(ctx, bson.M{"_id": userObjectID}).Decode(&user)
 		if err != nil {
-			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 			return
 		}
 
-		updateUser := bson.M{"$set": bson.M{"personal_information.gym": gymID}}
+		if user.Gym != nil {
+			// Remove user from the old gym's sportsmen list
+			log.Print("Removing user from the old gym's sportsmen list")
+			oldGymID, err := primitive.ObjectIDFromHex(*user.Gym)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid old gym ID"})
+				return
+			}
+			_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": oldGymID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from old gym"})
+				return
+			}
+		}
+
+		// Add user to the new gym's sportsmen list
+		updateGym := bson.M{"$addToSet": bson.M{"sportsmen": userID}} // Using $addToSet to prevent duplicates
+		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, updateGym)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to follow gym"})
+			return
+		}
+
+		// Update user's gym reference
+		updateUser := bson.M{"$set": bson.M{"gym": gymID}}
 		result, err := userCollection.UpdateOne(ctx, bson.M{"_id": userObjectID}, updateUser)
 		if err != nil {
-			log.Println("User update error:", err.Error())
+			// Rollback: remove user from new gym's sportsmen list
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's gym information"})
 			return
 		}
 
 		if result.MatchedCount == 0 {
-			log.Println("User not found for update")
+			// Rollback: remove user from new gym's sportsmen list
 			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found for update"})
 			return
