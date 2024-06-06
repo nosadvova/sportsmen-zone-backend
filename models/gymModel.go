@@ -14,7 +14,7 @@ type Gym struct {
 	Location      Location             `json:"location"`
 	Type          []string             `json:"type"`
 	Trainer_ID    primitive.ObjectID   `json:"trainer_id" validation:"required"`
-	Sportsmen     []string             `json:"sportsmen"`
+	Sportsmen     []primitive.ObjectID `json:"sportsmen"`
 	Trainings     []primitive.ObjectID `json:"trainings"`
 	Notifications []primitive.ObjectID `json:"notifications"`
 	Created_At    time.Time            `json:"created_at"`
