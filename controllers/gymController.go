@@ -37,6 +37,7 @@ func CreateGym() gin.HandlerFunc {
 
 		gym.Sportsmen = []primitive.ObjectID{}
 		gym.Trainings = []primitive.ObjectID{}
+		gym.Notifications = []primitive.ObjectID{}
 
 		var user models.User
 		err := userCollection.FindOne(ctx, bson.M{"_id": trainerID}).Decode(&user)
@@ -175,22 +176,22 @@ func FollowGym() gin.HandlerFunc {
 			return
 		}
 
-		var user models.PersonalInformation
+		var user models.User
 		err = userCollection.FindOne(ctx, bson.M{"_id": userObjectID}).Decode(&user)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found"})
 			return
 		}
 
-		if user.Gym != nil {
+		if user.Personal_Information.Gym != nil {
 			// Remove user from the old gym's sportsmen list
 			log.Print("Removing user from the old gym's sportsmen list")
-			oldGymID, err := primitive.ObjectIDFromHex(*user.Gym)
+			oldGymID, err := primitive.ObjectIDFromHex(*user.Personal_Information.Gym)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid old gym ID"})
 				return
 			}
-			_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": oldGymID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
+			_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": oldGymID}, bson.M{"$pull": bson.M{"sportsmen": userObjectID}})
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from old gym"})
 				return
@@ -198,7 +199,7 @@ func FollowGym() gin.HandlerFunc {
 		}
 
 		// Add user to the new gym's sportsmen list
-		updateGym := bson.M{"$addToSet": bson.M{"sportsmen": userID}} // Using $addToSet to prevent duplicates
+		updateGym := bson.M{"$addToSet": bson.M{"sportsmen": userObjectID}}
 		_, err = gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, updateGym)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to follow gym"})
@@ -206,18 +207,19 @@ func FollowGym() gin.HandlerFunc {
 		}
 
 		// Update user's gym reference
-		updateUser := bson.M{"$set": bson.M{"gym": gymID}}
+		updateUser := bson.M{"$set": bson.M{"personal_information.gym": gymID}}
 		result, err := userCollection.UpdateOne(ctx, bson.M{"_id": userObjectID}, updateUser)
 		if err != nil {
 			// Rollback: remove user from new gym's sportsmen list
-			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
+			log.Print("Error in update user")
+			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userObjectID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user's gym information"})
 			return
 		}
 
 		if result.MatchedCount == 0 {
 			// Rollback: remove user from new gym's sportsmen list
-			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userID}})
+			gymCollection.UpdateOne(ctx, bson.M{"_id": gymObjectID}, bson.M{"$pull": bson.M{"sportsmen": userObjectID}})
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found for update"})
 			return
 		}

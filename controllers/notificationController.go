@@ -39,8 +39,6 @@ func CreateNotification() gin.HandlerFunc {
 			return
 		}
 
-		log.Print(notification.Gym_ID)
-
 		gymObjectID := notification.Gym_ID
 
 		var gym models.Gym
